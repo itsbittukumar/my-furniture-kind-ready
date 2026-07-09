@@ -1,0 +1,21 @@
+# Requires the ingress-nginx controller installed on the kind cluster
+# (see infra/kind README / deploy steps). Add "127.0.0.1 skfurniture.local"
+# to your laptop's hosts file to reach the app at http://skfurniture.local
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sk-furniture-ingress
+  namespace: sk-furniture
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: skfurniture.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
