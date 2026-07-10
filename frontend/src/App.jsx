@@ -212,9 +212,9 @@ export default function App() {
     }
   }
 
-  async function checkout(address, paymentMethod) {
+  async function checkout(address, paymentMethod, paymentRef) {
     try {
-      await api.checkout(address, paymentMethod);
+      await api.checkout(address, paymentMethod, paymentRef);
       setCart([]);
       showToast("Order placed! Thank you for shopping with SK Furniture.");
       setView("store");
@@ -222,6 +222,16 @@ export default function App() {
     } catch (e) {
       showToast(e.message);
       return false;
+    }
+  }
+
+  async function markOrderPaid(orderId) {
+    try {
+      const updated = await api.markOrderPaid(orderId, "paid");
+      setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
+      showToast("Order marked as paid.");
+    } catch (e) {
+      showToast(e.message);
     }
   }
 
@@ -451,7 +461,7 @@ export default function App() {
         )}
 
         {view === "checkout" && currentUser && !isAdmin && cart.length > 0 && (
-          <CheckoutView total={cartTotal} onBack={() => setView("cart")} onPlaceOrder={checkout} />
+          <CheckoutView total={cartTotal} siteConfig={siteConfig} onBack={() => setView("cart")} onPlaceOrder={checkout} />
         )}
 
         {view === "login" && <AuthView mode="login" error={authError} onSubmit={handleLogin} onSwitch={() => { setAuthError(""); setView("signup"); }} />}
@@ -467,6 +477,7 @@ export default function App() {
             onUpdateProduct={updateProduct}
             onDeleteProduct={deleteProduct}
             onSaveConfig={saveSiteConfig}
+            onMarkOrderPaid={markOrderPaid}
           />
         )}
 
@@ -714,19 +725,29 @@ function CartView({ items, total, onQty, onRemove, onCheckout, onBrowse }) {
   );
 }
 
-function CheckoutView({ total, onBack, onPlaceOrder }) {
+function CheckoutView({ total, siteConfig, onBack, onPlaceOrder }) {
   const [form, setForm] = useState({
     fullName: "", phone: "", line1: "", line2: "", city: "", state: "", pincode: "",
   });
   const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [paymentRef, setPaymentRef] = useState("");
   const [errors, setErrors] = useState({});
   const [placing, setPlacing] = useState(false);
 
+  const upiConfigured = !!(siteConfig?.upiId || "").trim();
+
   const PAYMENT_OPTIONS = [
-    { id: "cod", label: "Cash on Delivery", hint: "Pay when your order arrives" },
-    { id: "upi", label: "UPI", hint: "Pay via any UPI app" },
-    { id: "card", label: "Credit / Debit Card", hint: "Visa, Mastercard, RuPay" },
+    { id: "cod", label: "Cash on Delivery", hint: "Pay when your order arrives", disabled: false },
+    { id: "upi", label: "UPI", hint: upiConfigured ? "Scan the QR code or pay to the UPI ID below" : "Not available right now", disabled: !upiConfigured },
+    { id: "card", label: "Credit / Debit Card", hint: "Coming soon", disabled: true },
   ];
+
+  // UPI deep link for the QR code / "pay" button — money goes straight to the
+  // seller's UPI ID configured in Admin > Storefront Settings.
+  const upiLink = upiConfigured
+    ? `upi://pay?pa=${encodeURIComponent(siteConfig.upiId.trim())}&pn=${encodeURIComponent(siteConfig.upiPayeeName || "SK Furniture")}&am=${total}&cu=INR&tn=${encodeURIComponent("SK Furniture order")}`
+    : "";
+  const qrImageUrl = upiLink ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiLink)}` : "";
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -741,6 +762,7 @@ function CheckoutView({ total, onBack, onPlaceOrder }) {
     });
     if (form.phone && !/^\d{10}$/.test(form.phone.trim())) next.phone = "Enter a 10-digit phone number";
     if (form.pincode && !/^\d{6}$/.test(form.pincode.trim())) next.pincode = "Enter a 6-digit PIN code";
+    if (paymentMethod === "upi" && !paymentRef.trim()) next.paymentRef = "Enter the UPI reference number after paying";
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -748,7 +770,7 @@ function CheckoutView({ total, onBack, onPlaceOrder }) {
   async function handlePlaceOrder() {
     if (!validate()) return;
     setPlacing(true);
-    const ok = await onPlaceOrder(form, paymentMethod);
+    const ok = await onPlaceOrder(form, paymentMethod, paymentRef.trim());
     setPlacing(false);
     if (!ok) return; // error toast already shown by parent; stay on the form so the user can retry
   }
@@ -810,10 +832,16 @@ function CheckoutView({ total, onBack, onPlaceOrder }) {
               {PAYMENT_OPTIONS.map((opt) => (
                 <label
                   key={opt.id}
-                  className="flex items-center gap-3 p-3 rounded-lg cursor-pointer"
+                  className={opt.disabled ? "flex items-center gap-3 p-3 rounded-lg cursor-not-allowed opacity-50" : "flex items-center gap-3 p-3 rounded-lg cursor-pointer"}
                   style={{ border: `1px solid ${paymentMethod === opt.id ? T.brass : T.sand}`, background: paymentMethod === opt.id ? T.creamDeep : "#fff" }}
                 >
-                  <input type="radio" name="paymentMethod" checked={paymentMethod === opt.id} onChange={() => setPaymentMethod(opt.id)} />
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    checked={paymentMethod === opt.id}
+                    disabled={opt.disabled}
+                    onChange={() => setPaymentMethod(opt.id)}
+                  />
                   <div>
                     <p className="text-sm font-medium">{opt.label}</p>
                     <p className="text-xs" style={{ color: T.charcoalSoft }}>{opt.hint}</p>
@@ -821,10 +849,36 @@ function CheckoutView({ total, onBack, onPlaceOrder }) {
                 </label>
               ))}
             </div>
-            {(paymentMethod === "upi" || paymentMethod === "card") && (
-              <p className="text-xs mt-3" style={{ color: T.charcoalSoft }}>
-                This is a demo store — no real payment will be charged. Your order will be recorded as "{paymentMethod === "upi" ? "UPI" : "Card"}" for demonstration purposes.
-              </p>
+
+            {/* UPI QR + reference number */}
+            {paymentMethod === "upi" && upiConfigured && (
+              <div className="mt-4 p-4 rounded-lg flex flex-col sm:flex-row items-center gap-4" style={{ background: T.creamDeep }}>
+                <img src={qrImageUrl} alt="UPI QR code" className="w-36 h-36 rounded-lg flex-shrink-0" style={{ background: "#fff", padding: 6 }} />
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="mb-1" style={{ color: T.charcoalSoft }}>Scan this QR with any UPI app, or pay directly to:</p>
+                  <p className="font-semibold mb-1" style={{ color: T.walnut }}>{siteConfig.upiId}</p>
+                  <p className="mb-3" style={{ color: T.charcoalSoft }}>Amount: <span className="font-medium" style={{ color: T.charcoal }}>{INR(total)}</span></p>
+                  <a
+                    href={upiLink}
+                    className="inline-block text-xs px-3 py-1.5 rounded-full font-medium mb-3"
+                    style={{ background: T.brass, color: T.walnutDark }}
+                  >
+                    Open in UPI app
+                  </a>
+                  <Field label="UPI transaction / reference ID (after paying)">
+                    <input
+                      style={inputStyle}
+                      value={paymentRef}
+                      onChange={(e) => { setPaymentRef(e.target.value); if (errors.paymentRef) setErrors((er) => ({ ...er, paymentRef: undefined })); }}
+                      placeholder="e.g. 234567891234"
+                    />
+                    {errors.paymentRef && <p style={errStyle}>{errors.paymentRef}</p>}
+                  </Field>
+                  <p className="text-xs mt-2" style={{ color: T.charcoalSoft }}>
+                    Your order will show as "Payment pending" until the seller confirms the payment was received.
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -899,7 +953,7 @@ function AuthView({ mode, error, onSubmit, onSwitch }) {
 
 /* ------------------------------- ADMIN ------------------------------- */
 
-function AdminView({ products, siteConfig, customers, orders, onAddProduct, onUpdateProduct, onDeleteProduct, onSaveConfig }) {
+function AdminView({ products, siteConfig, customers, orders, onAddProduct, onUpdateProduct, onDeleteProduct, onSaveConfig, onMarkOrderPaid }) {
   const [tab, setTab] = useState("add");
   const tabs = [
     { id: "add", label: "Add Product", icon: Plus },
@@ -940,7 +994,7 @@ function AdminView({ products, siteConfig, customers, orders, onAddProduct, onUp
       {tab === "inventory" && <InventoryTable products={products} onUpdate={onUpdateProduct} onDelete={onDeleteProduct} />}
       {tab === "settings" && <StorefrontSettings config={siteConfig} onSave={onSaveConfig} />}
       {tab === "users" && <CustomerList customers={customers} />}
-      {tab === "orders" && <OrdersList orders={orders} />}
+      {tab === "orders" && <OrdersList orders={orders} onMarkPaid={onMarkOrderPaid} />}
     </div>
   );
 }
@@ -1079,6 +1133,18 @@ function StorefrontSettings({ config, onSave }) {
       <Field label="Homepage subtext"><input value={form.heroSubtitle || ""} onChange={(e) => setForm({ ...form, heroSubtitle: e.target.value })} style={inputStyle} /></Field>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.saleActive} onChange={(e) => setForm({ ...form, saleActive: e.target.checked })} /> Show sale banner</label>
       <Field label="Sale banner text"><input value={form.saleText || ""} onChange={(e) => setForm({ ...form, saleText: e.target.value })} style={inputStyle} /></Field>
+
+      <div className="pt-2 mt-2" style={{ borderTop: `1px solid ${T.sand}` }}>
+        <p className="text-sm font-semibold mb-1" style={{ color: T.walnut }}>UPI Payment Details</p>
+        <p className="text-xs mb-3" style={{ color: T.charcoalSoft }}>Shown to customers at checkout as a QR code and UPI ID when they choose to pay by UPI. Payments go straight to this UPI ID — money is not routed through this app.</p>
+      </div>
+      <Field label="Your UPI ID">
+        <input value={form.upiId || ""} onChange={(e) => setForm({ ...form, upiId: e.target.value })} style={inputStyle} placeholder="yourname@okhdfcbank" />
+      </Field>
+      <Field label="Payee name shown to customer">
+        <input value={form.upiPayeeName || ""} onChange={(e) => setForm({ ...form, upiPayeeName: e.target.value })} style={inputStyle} placeholder="SK Furniture" />
+      </Field>
+
       <button type="submit" className="px-6 py-2.5 rounded-lg text-sm font-medium w-fit" style={{ background: T.walnutDark, color: T.cream }}>Save storefront settings</button>
     </form>
   );
@@ -1113,7 +1179,7 @@ function CustomerList({ customers }) {
   );
 }
 
-function OrdersList({ orders }) {
+function OrdersList({ orders, onMarkPaid }) {
   const PAYMENT_LABELS = { cod: "Cash on Delivery", upi: "UPI", card: "Card" };
   return (
     <div className="flex flex-col gap-3">
@@ -1135,11 +1201,29 @@ function OrdersList({ orders }) {
                 <p>{o.address.line1}{o.address.line2 ? `, ${o.address.line2}` : ""}, {o.address.city}, {o.address.state} - {o.address.pincode}</p>
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: T.forestLight, color: T.forest }}>
-                {PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod}
-              </span>
-              <p className="text-sm font-semibold" style={{ color: T.walnut }}>Total: {INR(o.total)}</p>
+            {o.paymentMethod === "upi" && o.paymentRef && (
+              <p className="text-xs mb-2" style={{ color: T.charcoalSoft }}>UPI ref: <span style={{ color: T.charcoal }}>{o.paymentRef}</span></p>
+            )}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: T.forestLight, color: T.forest }}>
+                  {PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod}
+                </span>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: o.paymentStatus === "paid" ? T.forestLight : "#FDECEC", color: o.paymentStatus === "paid" ? T.forest : T.danger }}
+                >
+                  {o.paymentStatus === "paid" ? "Paid" : "Payment pending"}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                {o.paymentStatus !== "paid" && (
+                  <button onClick={() => onMarkPaid(o._id)} className="text-xs px-3 py-1 rounded-full font-medium" style={{ background: T.brass, color: T.walnutDark }}>
+                    Mark as Paid
+                  </button>
+                )}
+                <p className="text-sm font-semibold" style={{ color: T.walnut }}>Total: {INR(o.total)}</p>
+              </div>
             </div>
           </div>
         ))
