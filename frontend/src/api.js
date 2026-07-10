@@ -37,7 +37,7 @@ export const api = {
   removeFromCart: (productId) => unwrap(client.delete(`/cart/${productId}`)),
 
   // orders
-  checkout: () => unwrap(client.post("/orders/checkout")),
+  checkout: (address, paymentMethod) => unwrap(client.post("/orders/checkout", { address, paymentMethod })),
   getMyOrders: () => unwrap(client.get("/orders/mine")),
   getAllOrders: () => unwrap(client.get("/orders")),
 
