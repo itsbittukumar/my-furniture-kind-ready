@@ -10,10 +10,25 @@ const orderItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const addressSchema = new mongoose.Schema(
+  {
+    fullName: { type: String, required: true },
+    phone: { type: String, required: true },
+    line1: { type: String, required: true },
+    line2: { type: String, default: "" },
+    city: { type: String, required: true },
+    state: { type: String, required: true },
+    pincode: { type: String, required: true },
+  },
+  { _id: false }
+);
+
 const orderSchema = new mongoose.Schema({
   username: { type: String, required: true },
   items: { type: [orderItemSchema], default: [] },
   total: { type: Number, required: true },
+  address: { type: addressSchema, required: true },
+  paymentMethod: { type: String, enum: ["cod", "upi", "card"], default: "cod" },
   createdAt: { type: Date, default: Date.now },
 });
 
