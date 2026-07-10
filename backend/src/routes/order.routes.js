@@ -9,7 +9,7 @@ const router = Router();
 router.post("/checkout", requireAuth, async (req, res) => {
   if (req.user.role === "admin") return res.status(403).json({ message: "Admin accounts can't place orders." });
 
-  const { address, paymentMethod } = req.body || {};
+  const { address, paymentMethod, paymentRef } = req.body || {};
   const required = ["fullName", "phone", "line1", "city", "state", "pincode"];
   const missing = required.filter((f) => !address?.[f] || !String(address[f]).trim());
   if (missing.length > 0) {
@@ -23,6 +23,9 @@ router.post("/checkout", requireAuth, async (req, res) => {
   }
   if (!["cod", "upi", "card"].includes(paymentMethod)) {
     return res.status(400).json({ message: "Please select a valid payment method." });
+  }
+  if (paymentMethod === "upi" && !String(paymentRef || "").trim()) {
+    return res.status(400).json({ message: "Please enter the UPI transaction / reference ID after paying." });
   }
 
   const user = await User.findById(req.user.id).populate("cart.product");
@@ -46,6 +49,8 @@ router.post("/checkout", requireAuth, async (req, res) => {
       pincode: address.pincode.trim(),
     },
     paymentMethod,
+    paymentRef: (paymentRef || "").trim(),
+    paymentStatus: "pending",
   });
 
   user.cart = [];
@@ -64,6 +69,17 @@ router.get("/mine", requireAuth, async (req, res) => {
 router.get("/", requireAuth, requireAdmin, async (req, res) => {
   const orders = await Order.find().sort({ createdAt: -1 });
   res.json(orders);
+});
+
+// Admin only: mark an order's payment as verified/received (manual UPI/COD confirmation)
+router.patch("/:id/payment-status", requireAuth, requireAdmin, async (req, res) => {
+  const { paymentStatus } = req.body || {};
+  if (!["pending", "paid"].includes(paymentStatus)) {
+    return res.status(400).json({ message: "Invalid payment status." });
+  }
+  const order = await Order.findByIdAndUpdate(req.params.id, { paymentStatus }, { new: true });
+  if (!order) return res.status(404).json({ message: "Order not found." });
+  res.json(order);
 });
 
 export default router;
