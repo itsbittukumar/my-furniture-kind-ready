@@ -29,6 +29,8 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true },
   address: { type: addressSchema, required: true },
   paymentMethod: { type: String, enum: ["cod", "upi", "card"], default: "cod" },
+  paymentStatus: { type: String, enum: ["pending", "paid"], default: "pending" },
+  paymentRef: { type: String, default: "" }, // UPI transaction/UTR number entered by the customer
   createdAt: { type: Date, default: Date.now },
 });
 
