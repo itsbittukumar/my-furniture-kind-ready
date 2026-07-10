@@ -212,14 +212,16 @@ export default function App() {
     }
   }
 
-  async function checkout() {
+  async function checkout(address, paymentMethod) {
     try {
-      await api.checkout();
+      await api.checkout(address, paymentMethod);
       setCart([]);
       showToast("Order placed! Thank you for shopping with SK Furniture.");
       setView("store");
+      return true;
     } catch (e) {
       showToast(e.message);
+      return false;
     }
   }
 
@@ -445,7 +447,11 @@ export default function App() {
         )}
 
         {view === "cart" && currentUser && !isAdmin && (
-          <CartView items={cart} total={cartTotal} onQty={changeQty} onRemove={removeFromCart} onCheckout={checkout} onBrowse={() => setView("store")} />
+          <CartView items={cart} total={cartTotal} onQty={changeQty} onRemove={removeFromCart} onCheckout={() => setView("checkout")} onBrowse={() => setView("store")} />
+        )}
+
+        {view === "checkout" && currentUser && !isAdmin && cart.length > 0 && (
+          <CheckoutView total={cartTotal} onBack={() => setView("cart")} onPlaceOrder={checkout} />
         )}
 
         {view === "login" && <AuthView mode="login" error={authError} onSubmit={handleLogin} onSwitch={() => { setAuthError(""); setView("signup"); }} />}
@@ -702,7 +708,142 @@ function CartView({ items, total, onQty, onRemove, onCheckout, onBrowse }) {
         <div className="flex justify-between text-sm mb-2" style={{ color: T.sand }}><span>Subtotal</span><span>{INR(total)}</span></div>
         <div className="flex justify-between text-sm mb-4" style={{ color: T.sand }}><span>Delivery</span><span>Free</span></div>
         <div className="flex justify-between font-semibold mb-5" style={{ color: T.cream }}><span>Total</span><span>{INR(total)}</span></div>
-        <button onClick={onCheckout} className="w-full py-3 rounded-lg text-sm font-medium" style={{ background: T.brass, color: T.walnutDark }}>Place order</button>
+        <button onClick={onCheckout} className="w-full py-3 rounded-lg text-sm font-medium" style={{ background: T.brass, color: T.walnutDark }}>Proceed to checkout</button>
+      </div>
+    </div>
+  );
+}
+
+function CheckoutView({ total, onBack, onPlaceOrder }) {
+  const [form, setForm] = useState({
+    fullName: "", phone: "", line1: "", line2: "", city: "", state: "", pincode: "",
+  });
+  const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [errors, setErrors] = useState({});
+  const [placing, setPlacing] = useState(false);
+
+  const PAYMENT_OPTIONS = [
+    { id: "cod", label: "Cash on Delivery", hint: "Pay when your order arrives" },
+    { id: "upi", label: "UPI", hint: "Pay via any UPI app" },
+    { id: "card", label: "Credit / Debit Card", hint: "Visa, Mastercard, RuPay" },
+  ];
+
+  function update(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+    if (errors[field]) setErrors((e) => ({ ...e, [field]: undefined }));
+  }
+
+  function validate() {
+    const required = ["fullName", "phone", "line1", "city", "state", "pincode"];
+    const next = {};
+    required.forEach((f) => {
+      if (!form[f].trim()) next[f] = "Required";
+    });
+    if (form.phone && !/^\d{10}$/.test(form.phone.trim())) next.phone = "Enter a 10-digit phone number";
+    if (form.pincode && !/^\d{6}$/.test(form.pincode.trim())) next.pincode = "Enter a 6-digit PIN code";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function handlePlaceOrder() {
+    if (!validate()) return;
+    setPlacing(true);
+    const ok = await onPlaceOrder(form, paymentMethod);
+    setPlacing(false);
+    if (!ok) return; // error toast already shown by parent; stay on the form so the user can retry
+  }
+
+  const errStyle = { color: T.danger, fontSize: 12, marginTop: 4 };
+
+  return (
+    <div className="mt-8">
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: T.charcoalSoft }}>
+        <ChevronLeft size={16} /> Back to cart
+      </button>
+      <h1 className="sk-display text-2xl mb-6" style={{ color: T.walnut }}>Checkout</h1>
+
+      <div className="grid md:grid-cols-3 gap-8">
+        <div className="md:col-span-2 flex flex-col gap-6">
+
+          {/* Delivery address */}
+          <div className="p-5 rounded-xl" style={{ background: "#fff", border: `1px solid ${T.sand}` }}>
+            <h2 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: T.walnut }}>
+              <Package size={16} /> Delivery Address
+            </h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <Field label="Full name">
+                <input style={inputStyle} value={form.fullName} onChange={(e) => update("fullName", e.target.value)} placeholder="Your full name" />
+                {errors.fullName && <p style={errStyle}>{errors.fullName}</p>}
+              </Field>
+              <Field label="Phone number">
+                <input style={inputStyle} value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="10-digit mobile number" maxLength={10} />
+                {errors.phone && <p style={errStyle}>{errors.phone}</p>}
+              </Field>
+              <Field label="Address line 1" full>
+                <input style={inputStyle} value={form.line1} onChange={(e) => update("line1", e.target.value)} placeholder="House no., street, area" />
+                {errors.line1 && <p style={errStyle}>{errors.line1}</p>}
+              </Field>
+              <Field label="Address line 2 (optional)" full>
+                <input style={inputStyle} value={form.line2} onChange={(e) => update("line2", e.target.value)} placeholder="Landmark, apartment, etc." />
+              </Field>
+              <Field label="City">
+                <input style={inputStyle} value={form.city} onChange={(e) => update("city", e.target.value)} placeholder="City" />
+                {errors.city && <p style={errStyle}>{errors.city}</p>}
+              </Field>
+              <Field label="State">
+                <input style={inputStyle} value={form.state} onChange={(e) => update("state", e.target.value)} placeholder="State" />
+                {errors.state && <p style={errStyle}>{errors.state}</p>}
+              </Field>
+              <Field label="PIN code">
+                <input style={inputStyle} value={form.pincode} onChange={(e) => update("pincode", e.target.value)} placeholder="6-digit PIN code" maxLength={6} />
+                {errors.pincode && <p style={errStyle}>{errors.pincode}</p>}
+              </Field>
+            </div>
+          </div>
+
+          {/* Payment method */}
+          <div className="p-5 rounded-xl" style={{ background: "#fff", border: `1px solid ${T.sand}` }}>
+            <h2 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: T.walnut }}>
+              <Receipt size={16} /> Payment Method
+            </h2>
+            <div className="flex flex-col gap-2">
+              {PAYMENT_OPTIONS.map((opt) => (
+                <label
+                  key={opt.id}
+                  className="flex items-center gap-3 p-3 rounded-lg cursor-pointer"
+                  style={{ border: `1px solid ${paymentMethod === opt.id ? T.brass : T.sand}`, background: paymentMethod === opt.id ? T.creamDeep : "#fff" }}
+                >
+                  <input type="radio" name="paymentMethod" checked={paymentMethod === opt.id} onChange={() => setPaymentMethod(opt.id)} />
+                  <div>
+                    <p className="text-sm font-medium">{opt.label}</p>
+                    <p className="text-xs" style={{ color: T.charcoalSoft }}>{opt.hint}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {(paymentMethod === "upi" || paymentMethod === "card") && (
+              <p className="text-xs mt-3" style={{ color: T.charcoalSoft }}>
+                This is a demo store — no real payment will be charged. Your order will be recorded as "{paymentMethod === "upi" ? "UPI" : "Card"}" for demonstration purposes.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Order summary */}
+        <div className="h-fit p-5 rounded-xl" style={{ background: T.walnut }}>
+          <h2 className="sk-display text-lg mb-4" style={{ color: T.cream }}>Order Summary</h2>
+          <div className="flex justify-between text-sm mb-2" style={{ color: T.sand }}><span>Subtotal</span><span>{INR(total)}</span></div>
+          <div className="flex justify-between text-sm mb-4" style={{ color: T.sand }}><span>Delivery</span><span>Free</span></div>
+          <div className="flex justify-between font-semibold mb-5" style={{ color: T.cream }}><span>Total</span><span>{INR(total)}</span></div>
+          <button
+            onClick={handlePlaceOrder}
+            disabled={placing}
+            className="w-full py-3 rounded-lg text-sm font-medium disabled:opacity-60"
+            style={{ background: T.brass, color: T.walnutDark }}
+          >
+            {placing ? "Placing order…" : "Confirm & Place Order"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -973,6 +1114,7 @@ function CustomerList({ customers }) {
 }
 
 function OrdersList({ orders }) {
+  const PAYMENT_LABELS = { cod: "Cash on Delivery", upi: "UPI", card: "Card" };
   return (
     <div className="flex flex-col gap-3">
       {orders.length === 0 ? (
@@ -987,7 +1129,18 @@ function OrdersList({ orders }) {
             <ul className="text-xs mb-2" style={{ color: T.charcoalSoft }}>
               {o.items.map((i, idx) => <li key={idx}>{i.qty} × {i.name}</li>)}
             </ul>
-            <p className="text-sm font-semibold" style={{ color: T.walnut }}>Total: {INR(o.total)}</p>
+            {o.address && (
+              <div className="text-xs mb-2 p-2 rounded-lg" style={{ background: T.creamDeep, color: T.charcoalSoft }}>
+                <p className="font-medium" style={{ color: T.charcoal }}>{o.address.fullName} · {o.address.phone}</p>
+                <p>{o.address.line1}{o.address.line2 ? `, ${o.address.line2}` : ""}, {o.address.city}, {o.address.state} - {o.address.pincode}</p>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: T.forestLight, color: T.forest }}>
+                {PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod}
+              </span>
+              <p className="text-sm font-semibold" style={{ color: T.walnut }}>Total: {INR(o.total)}</p>
+            </div>
           </div>
         ))
       )}
