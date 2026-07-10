@@ -31,7 +31,35 @@ const FONTS = `
 .sk-tag { clip-path: polygon(0 0, 85% 0, 100% 50%, 85% 100%, 0 100%); }
 .sk-scroll::-webkit-scrollbar { height: 6px; }
 .sk-scroll::-webkit-scrollbar-thumb { background: ${T.sand}; border-radius: 4px; }
+.sk-hero-bg { transition: opacity 1.2s ease-in-out; }
+.sk-page-bg { transition: opacity 1.5s ease-in-out; }
 `;
+
+// Rotating hero banner photos (broad single keywords = reliable matches).
+const HERO_IMAGES = [
+  "https://loremflickr.com/1600/700/living-room?lock=101",
+  "https://loremflickr.com/1600/700/furniture-store?lock=102",
+  "https://loremflickr.com/1600/700/scandinavian-interior?lock=103",
+  "https://loremflickr.com/1600/700/cozy-home?lock=104",
+  "https://loremflickr.com/1600/700/modern-interior?lock=105",
+];
+
+// Slow-changing full-page background photos (kept very subtle behind the UI).
+const PAGE_BG_IMAGES = [
+  "https://loremflickr.com/1920/1080/wood-texture?lock=201",
+  "https://loremflickr.com/1920/1080/interior-design?lock=202",
+  "https://loremflickr.com/1920/1080/furniture?lock=203",
+];
+
+function useRotatingIndex(length, intervalMs) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (length <= 1) return;
+    const id = setInterval(() => setIndex((i) => (i + 1) % length), intervalMs);
+    return () => clearInterval(id);
+  }, [length, intervalMs]);
+  return index;
+}
 
 const CATEGORIES = [
   { id: "sofas", name: "Sofas & Couches", icon: Sofa },
@@ -261,6 +289,7 @@ export default function App() {
 
   const dealsProducts = products.filter((p) => p.isDeal);
   const selectedProduct = products.find((p) => p._id === selectedProductId);
+  const pageBgIndex = useRotatingIndex(PAGE_BG_IMAGES.length, 9000);
 
   if (loading) {
     return (
@@ -275,8 +304,24 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen sk-body" style={{ background: T.cream, color: T.charcoal }}>
+    <div className="min-h-screen sk-body relative" style={{ background: T.cream, color: T.charcoal }}>
       <style>{FONTS}</style>
+
+      {/* ---------- FULL-PAGE BACKGROUND (subtle, rotates slowly) ---------- */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        {PAGE_BG_IMAGES.map((src, i) => (
+          <img
+            key={src}
+            src={src}
+            alt=""
+            className="sk-page-bg absolute inset-0 w-full h-full object-cover"
+            style={{ opacity: i === pageBgIndex ? 0.08 : 0 }}
+          />
+        ))}
+        <div className="absolute inset-0" style={{ background: T.cream, opacity: 0.85 }} />
+      </div>
+
+      <div className="relative z-10">
 
       {/* ---------- HEADER ---------- */}
       <header className="sticky top-0 z-30" style={{ background: T.walnutDark }}>
@@ -433,6 +478,7 @@ export default function App() {
           <p>Solid wood. Honest prices. Made for real homes.</p>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
@@ -517,9 +563,25 @@ function ProductCard({ product, onSelect, onAddToCart, isAdmin }) {
 }
 
 function StoreView({ siteConfig, dealsProducts, filteredProducts, activeCategory, searchTerm, onSelect, onAddToCart, isAdmin }) {
+  const heroIndex = useRotatingIndex(HERO_IMAGES.length, 5000);
   return (
     <div>
       <section className="mt-6 rounded-2xl overflow-hidden relative" style={{ background: T.walnut }}>
+        {/* Rotating background photos */}
+        <div className="absolute inset-0">
+          {HERO_IMAGES.map((src, i) => (
+            <img
+              key={src}
+              src={src}
+              alt=""
+              className="sk-hero-bg absolute inset-0 w-full h-full object-cover"
+              style={{ opacity: i === heroIndex ? 1 : 0 }}
+            />
+          ))}
+          {/* Dark gradient so text stays readable over any photo */}
+          <div className="absolute inset-0" style={{ background: `linear-gradient(90deg, ${T.walnutDark}E6 0%, ${T.walnutDark}B3 45%, ${T.walnutDark}66 100%)` }} />
+        </div>
+
         <div className="px-6 py-12 md:px-12 md:py-16 max-w-2xl relative z-10">
           {siteConfig.saleActive && (
             <span className="inline-flex items-center gap-1.5 mb-4 px-3 py-1 rounded-full text-xs font-semibold" style={{ background: T.brass, color: T.walnutDark }}>
@@ -529,7 +591,17 @@ function StoreView({ siteConfig, dealsProducts, filteredProducts, activeCategory
           <h1 className="sk-display text-3xl md:text-5xl leading-tight mb-4" style={{ color: T.cream }}>{siteConfig.heroTitle}</h1>
           <p className="text-sm md:text-base" style={{ color: T.sand }}>{siteConfig.heroSubtitle}</p>
         </div>
-        <Sofa size={220} strokeWidth={0.6} className="hidden md:block absolute -right-6 -bottom-10 opacity-20" style={{ color: T.brassLight }} />
+
+        {/* Carousel dots */}
+        <div className="absolute bottom-4 right-6 z-10 flex gap-1.5">
+          {HERO_IMAGES.map((_, i) => (
+            <span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: i === heroIndex ? T.brassLight : `${T.cream}55` }}
+            />
+          ))}
+        </div>
       </section>
 
       {activeCategory === "all" && !searchTerm && dealsProducts.length > 0 && (
