@@ -37,9 +37,10 @@ export const api = {
   removeFromCart: (productId) => unwrap(client.delete(`/cart/${productId}`)),
 
   // orders
-  checkout: (address, paymentMethod) => unwrap(client.post("/orders/checkout", { address, paymentMethod })),
+  checkout: (address, paymentMethod, paymentRef) => unwrap(client.post("/orders/checkout", { address, paymentMethod, paymentRef })),
   getMyOrders: () => unwrap(client.get("/orders/mine")),
   getAllOrders: () => unwrap(client.get("/orders")),
+  markOrderPaid: (orderId, paymentStatus) => unwrap(client.patch(`/orders/${orderId}/payment-status`, { paymentStatus })),
 
   // site config
   getConfig: () => unwrap(client.get("/config")),
