@@ -5,6 +5,8 @@ const siteConfigSchema = new mongoose.Schema({
   heroSubtitle: { type: String, default: "Solid wood, honest prices, delivered to your door across India." },
   saleActive: { type: Boolean, default: true },
   saleText: { type: String, default: "Monsoon Sale — up to 20% off select pieces" },
+  upiId: { type: String, default: "" },        // e.g. "yourname@okhdfcbank"
+  upiPayeeName: { type: String, default: "SK Furniture" },
 });
 
 export default mongoose.model("SiteConfig", siteConfigSchema);
