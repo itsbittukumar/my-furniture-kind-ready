@@ -1078,11 +1078,6 @@ function AuthView({ mode, error, onSubmit, onSwitch }) {
         {error && <p className="text-xs" style={{ color: T.danger }}>{error}</p>}
         <button type="submit" className="mt-2 w-full py-2.5 rounded-lg text-sm font-medium" style={{ background: T.walnutDark, color: T.cream }}>{isLogin ? "Log in" : "Sign up"}</button>
       </form>
-      {isLogin && (
-        <p className="text-[11px] text-center mt-4" style={{ color: T.charcoalSoft }}>
-          Admin demo login — username <b>admin</b>, password <b>admin@123</b> (change this after first deploy)
-        </p>
-      )}
     </div>
   );
 }
