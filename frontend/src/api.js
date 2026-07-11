@@ -48,4 +48,10 @@ export const api = {
 
   // users (admin)
   getCustomers: () => unwrap(client.get("/users")),
+
+  // saved addresses (logged-in customer)
+  getAddresses: () => unwrap(client.get("/users/me/addresses")),
+  addAddress: (data) => unwrap(client.post("/users/me/addresses", data)),
+  updateAddress: (id, data) => unwrap(client.put(`/users/me/addresses/${id}`, data)),
+  deleteAddress: (id) => unwrap(client.delete(`/users/me/addresses/${id}`)),
 };
