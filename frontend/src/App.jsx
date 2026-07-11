@@ -726,13 +726,36 @@ function CartView({ items, total, onQty, onRemove, onCheckout, onBrowse }) {
 }
 
 function CheckoutView({ total, siteConfig, onBack, onPlaceOrder }) {
+  const [addresses, setAddresses] = useState([]);
+  const [addressesLoaded, setAddressesLoaded] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+
   const [form, setForm] = useState({
-    fullName: "", phone: "", line1: "", line2: "", city: "", state: "", pincode: "",
+    label: "Home", fullName: "", phone: "", line1: "", line2: "", city: "", state: "", pincode: "",
   });
   const [paymentMethod, setPaymentMethod] = useState("cod");
   const [paymentRef, setPaymentRef] = useState("");
   const [errors, setErrors] = useState({});
   const [placing, setPlacing] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await api.getAddresses();
+        setAddresses(list);
+        if (list.length > 0) {
+          setSelectedAddressId(list[list.length - 1]._id);
+        } else {
+          setShowAddForm(true);
+        }
+      } catch (e) {
+        setShowAddForm(true);
+      }
+      setAddressesLoaded(true);
+    })();
+  }, []);
 
   const upiConfigured = !!(siteConfig?.upiId || "").trim();
 
@@ -754,7 +777,7 @@ function CheckoutView({ total, siteConfig, onBack, onPlaceOrder }) {
     if (errors[field]) setErrors((e) => ({ ...e, [field]: undefined }));
   }
 
-  function validate() {
+  function validateForm() {
     const required = ["fullName", "phone", "line1", "city", "state", "pincode"];
     const next = {};
     required.forEach((f) => {
@@ -762,17 +785,64 @@ function CheckoutView({ total, siteConfig, onBack, onPlaceOrder }) {
     });
     if (form.phone && !/^\d{10}$/.test(form.phone.trim())) next.phone = "Enter a 10-digit phone number";
     if (form.pincode && !/^\d{6}$/.test(form.pincode.trim())) next.pincode = "Enter a 6-digit PIN code";
-    if (paymentMethod === "upi" && !paymentRef.trim()) next.paymentRef = "Enter the UPI reference number after paying";
     setErrors(next);
     return Object.keys(next).length === 0;
   }
 
+  async function handleSaveAddress() {
+    if (!validateForm()) return;
+    setSavingAddress(true);
+    try {
+      const updated = await api.addAddress(form);
+      setAddresses(updated);
+      setSelectedAddressId(updated[updated.length - 1]._id);
+      setShowAddForm(false);
+      setForm({ label: "Home", fullName: "", phone: "", line1: "", line2: "", city: "", state: "", pincode: "" });
+      setErrors({});
+    } catch (e) {
+      setErrors({ form: e.message });
+    }
+    setSavingAddress(false);
+  }
+
+  async function handleDeleteAddress(id) {
+    try {
+      const updated = await api.deleteAddress(id);
+      setAddresses(updated);
+      if (selectedAddressId === id) {
+        setSelectedAddressId(updated.length > 0 ? updated[updated.length - 1]._id : null);
+        if (updated.length === 0) setShowAddForm(true);
+      }
+    } catch (e) {
+      // ignore — address list will just stay as-is
+    }
+  }
+
+  function validatePayment() {
+    const next = {};
+    if (paymentMethod === "upi" && !paymentRef.trim()) next.paymentRef = "Enter the UPI reference number after paying";
+    setErrors((e) => ({ ...e, ...next }));
+    return Object.keys(next).length === 0;
+  }
+
   async function handlePlaceOrder() {
-    if (!validate()) return;
+    const selected = addresses.find((a) => a._id === selectedAddressId);
+    if (!selected) {
+      setErrors((e) => ({ ...e, form: "Please select or add a delivery address." }));
+      return;
+    }
+    if (!validatePayment()) return;
     setPlacing(true);
-    const ok = await onPlaceOrder(form, paymentMethod, paymentRef.trim());
+    const ok = await onPlaceOrder(
+      {
+        fullName: selected.fullName, phone: selected.phone, line1: selected.line1,
+        line2: selected.line2, city: selected.city, state: selected.state, pincode: selected.pincode,
+      },
+      paymentMethod,
+      paymentRef.trim()
+    );
     setPlacing(false);
-    if (!ok) return; // error toast already shown by parent; stay on the form so the user can retry
+    if (!ok) return; // error toast already shown by parent; stay on the page so the user can retry
   }
 
   const errStyle = { color: T.danger, fontSize: 12, marginTop: 4 };
@@ -789,38 +859,104 @@ function CheckoutView({ total, siteConfig, onBack, onPlaceOrder }) {
 
           {/* Delivery address */}
           <div className="p-5 rounded-xl" style={{ background: "#fff", border: `1px solid ${T.sand}` }}>
-            <h2 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: T.walnut }}>
-              <Package size={16} /> Delivery Address
-            </h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              <Field label="Full name">
-                <input style={inputStyle} value={form.fullName} onChange={(e) => update("fullName", e.target.value)} placeholder="Your full name" />
-                {errors.fullName && <p style={errStyle}>{errors.fullName}</p>}
-              </Field>
-              <Field label="Phone number">
-                <input style={inputStyle} value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="10-digit mobile number" maxLength={10} />
-                {errors.phone && <p style={errStyle}>{errors.phone}</p>}
-              </Field>
-              <Field label="Address line 1" full>
-                <input style={inputStyle} value={form.line1} onChange={(e) => update("line1", e.target.value)} placeholder="House no., street, area" />
-                {errors.line1 && <p style={errStyle}>{errors.line1}</p>}
-              </Field>
-              <Field label="Address line 2 (optional)" full>
-                <input style={inputStyle} value={form.line2} onChange={(e) => update("line2", e.target.value)} placeholder="Landmark, apartment, etc." />
-              </Field>
-              <Field label="City">
-                <input style={inputStyle} value={form.city} onChange={(e) => update("city", e.target.value)} placeholder="City" />
-                {errors.city && <p style={errStyle}>{errors.city}</p>}
-              </Field>
-              <Field label="State">
-                <input style={inputStyle} value={form.state} onChange={(e) => update("state", e.target.value)} placeholder="State" />
-                {errors.state && <p style={errStyle}>{errors.state}</p>}
-              </Field>
-              <Field label="PIN code">
-                <input style={inputStyle} value={form.pincode} onChange={(e) => update("pincode", e.target.value)} placeholder="6-digit PIN code" maxLength={6} />
-                {errors.pincode && <p style={errStyle}>{errors.pincode}</p>}
-              </Field>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: T.walnut }}>
+                <Package size={16} /> Delivery Address
+              </h2>
+              {!showAddForm && (
+                <button onClick={() => setShowAddForm(true)} className="text-xs font-medium flex items-center gap-1" style={{ color: T.brass }}>
+                  <Plus size={13} /> Add new address
+                </button>
+              )}
             </div>
+
+            {errors.form && <p style={errStyle} className="mb-2">{errors.form}</p>}
+
+            {!addressesLoaded && <p className="text-sm" style={{ color: T.charcoalSoft }}>Loading your addresses…</p>}
+
+            {/* Saved address list */}
+            {addressesLoaded && !showAddForm && addresses.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {addresses.map((a) => (
+                  <label
+                    key={a._id}
+                    className="flex items-start gap-3 p-3 rounded-lg cursor-pointer"
+                    style={{ border: `1px solid ${selectedAddressId === a._id ? T.brass : T.sand}`, background: selectedAddressId === a._id ? T.creamDeep : "#fff" }}
+                  >
+                    <input type="radio" name="savedAddress" checked={selectedAddressId === a._id} onChange={() => setSelectedAddressId(a._id)} className="mt-1" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: T.forestLight, color: T.forest }}>{a.label || "Home"}</span>
+                        <p className="text-sm font-medium">{a.fullName} · {a.phone}</p>
+                      </div>
+                      <p className="text-xs" style={{ color: T.charcoalSoft }}>
+                        {a.line1}{a.line2 ? `, ${a.line2}` : ""}, {a.city}, {a.state} - {a.pincode}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); handleDeleteAddress(a._id); }}
+                      style={{ color: T.danger }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Add new address form */}
+            {addressesLoaded && showAddForm && (
+              <div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <Field label="Label (e.g. Home, Work)">
+                    <input style={inputStyle} value={form.label} onChange={(e) => update("label", e.target.value)} placeholder="Home" />
+                  </Field>
+                  <Field label="Full name">
+                    <input style={inputStyle} value={form.fullName} onChange={(e) => update("fullName", e.target.value)} placeholder="Your full name" />
+                    {errors.fullName && <p style={errStyle}>{errors.fullName}</p>}
+                  </Field>
+                  <Field label="Phone number">
+                    <input style={inputStyle} value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="10-digit mobile number" maxLength={10} />
+                    {errors.phone && <p style={errStyle}>{errors.phone}</p>}
+                  </Field>
+                  <Field label="Address line 1" full>
+                    <input style={inputStyle} value={form.line1} onChange={(e) => update("line1", e.target.value)} placeholder="House no., street, area" />
+                    {errors.line1 && <p style={errStyle}>{errors.line1}</p>}
+                  </Field>
+                  <Field label="Address line 2 (optional)" full>
+                    <input style={inputStyle} value={form.line2} onChange={(e) => update("line2", e.target.value)} placeholder="Landmark, apartment, etc." />
+                  </Field>
+                  <Field label="City">
+                    <input style={inputStyle} value={form.city} onChange={(e) => update("city", e.target.value)} placeholder="City" />
+                    {errors.city && <p style={errStyle}>{errors.city}</p>}
+                  </Field>
+                  <Field label="State">
+                    <input style={inputStyle} value={form.state} onChange={(e) => update("state", e.target.value)} placeholder="State" />
+                    {errors.state && <p style={errStyle}>{errors.state}</p>}
+                  </Field>
+                  <Field label="PIN code">
+                    <input style={inputStyle} value={form.pincode} onChange={(e) => update("pincode", e.target.value)} placeholder="6-digit PIN code" maxLength={6} />
+                    {errors.pincode && <p style={errStyle}>{errors.pincode}</p>}
+                  </Field>
+                </div>
+                <div className="flex items-center gap-3 mt-4">
+                  <button
+                    onClick={handleSaveAddress}
+                    disabled={savingAddress}
+                    className="px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-60"
+                    style={{ background: T.walnutDark, color: T.cream }}
+                  >
+                    {savingAddress ? "Saving…" : "Save & Use This Address"}
+                  </button>
+                  {addresses.length > 0 && (
+                    <button onClick={() => { setShowAddForm(false); setErrors({}); }} className="text-sm" style={{ color: T.charcoalSoft }}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Payment method */}
