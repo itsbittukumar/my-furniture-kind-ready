@@ -1,0 +1,25 @@
+# Exposes Grafana (installed via the kube-prometheus-stack Helm chart) at
+# http://grafana.local through the same ingress-nginx controller already
+# running in the kind cluster for the SK Furniture app.
+#
+# Requires a Windows hosts file entry:  127.0.0.1 grafana.local
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: grafana.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Default service name created by the kube-prometheus-stack
+                # chart when installed with release name "monitoring".
+                name: monitoring-grafana
+                port:
+                  number: 80
