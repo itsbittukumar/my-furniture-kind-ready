@@ -1,0 +1,42 @@
+# Requests one HTTPS certificate per local hostname from the local CA
+# (infra/tls/ca-setup.yaml must be applied first). cert-manager watches
+# these and automatically creates/renews the TLS secrets referenced by
+# each Ingress (skfurniture-tls, grafana-tls, prometheus-tls).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: skfurniture-tls
+  namespace: sk-furniture
+spec:
+  secretName: skfurniture-tls
+  dnsNames:
+    - skfurniture.local
+  issuerRef:
+    name: sk-local-ca-issuer
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: monitoring
+spec:
+  secretName: grafana-tls
+  dnsNames:
+    - grafana.local
+  issuerRef:
+    name: sk-local-ca-issuer
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: prometheus-tls
+  namespace: monitoring
+spec:
+  secretName: prometheus-tls
+  dnsNames:
+    - prometheus.local
+  issuerRef:
+    name: sk-local-ca-issuer
+    kind: ClusterIssuer
